@@ -1,0 +1,41 @@
+default:
+  image: docker:20.10.17
+  before_script:
+    - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+
+variables:
+  TEST_FILE: tests.test_app
+  CONTAINER_IMAGE: $CI_REGISTRY_IMAGE:test
+  DEPLOY_SERVER: ubuntu@ec2-3-68-149-236.eu-central-1.compute.amazonaws.com
+  SSH_KEY_PATH: "/root/.ssh/id_rsa"
+
+stages:
+  - build
+  - test
+  - deploy
+
+build:
+  stage: build
+  script:
+    - docker build -t $CONTAINER_IMAGE .
+    - docker push $CONTAINER_IMAGE
+
+test:
+  stage: test
+  script:
+    - docker pull $CONTAINER_IMAGE
+    - docker run $CONTAINER_IMAGE python -m unittest $TEST_FILE
+
+deploy:
+  stage: deploy
+  before_script: []
+  script:
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' > $SSH_KEY_PATH
+    - chmod 400 $SSH_KEY_PATH
+    - ssh -o StrictHostKeyChecking=no -i $SSH_KEY_PATH $DEPLOY_SERVER "
+        echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY &&
+        docker pull $CONTAINER_IMAGE &&
+        docker run -d --name task-4-12 $CONTAINER_IMAGE"
+  after_script:
+    - rm -r ~/.ssh/id_rsa
